@@ -155,7 +155,7 @@ class IRC:
     self.iostream.read_until(b'\r\n', self.message_received)
 
   def message_received(self, msg):
-    msg = msg.decode(errors='replace')
+    msg = msg[:-2].decode(errors='replace')
     logging.info('irc received: %s', msg)
     self.iostream.read_until(b'\r\n', self.message_received)
     try:
@@ -167,7 +167,7 @@ class IRC:
     if who != '#' + self.config['channel']:
       return
     username = user[1:user.find('!')]
-    self.xmpp.sendmsg('[%s] %s' % (username, msg[1:-2]))
+    self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
 
   def sendmsg(self, msg):
     if not self.joined:
