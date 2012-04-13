@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+# vim:fileencoding=utf-8
+
+import sys
+import logging
+import socket
+from functools import partial
+
+from myutils import enable_pretty_logging
+enable_pretty_logging(logging.INFO)
+
+from pyxmpp2.jid import JID
+from pyxmpp2.message import Message
+from pyxmpp2.presence import Presence
+from pyxmpp2.client import Client
+from pyxmpp2.settings import XMPPSettings
+from pyxmpp2.interfaces import EventHandler, event_handler, QUIT
+from pyxmpp2.streamevents import AuthorizedEvent, DisconnectedEvent
+from pyxmpp2.interfaces import XMPPFeatureHandler
+from pyxmpp2.interfaces import presence_stanza_handler, message_stanza_handler
+from pyxmpp2.ext.version import VersionProvider
+from pyxmpp2.mainloop.tornado import TornadoMainLoop
+import tornado.iostream
+
+from config import *
+
+class IrcBot(EventHandler, XMPPFeatureHandler):
+  def __init__(self, my_jid, settings, ircconfig):
+    version_provider = VersionProvider(settings)
+    self.client = Client(
+      my_jid, [self, version_provider], settings,
+      main_loop=TornadoMainLoop(),
+    )
+    self.irc = IRC(ircconfig, self)
+    self.jid = my_jid
+
+  def run(self):
+    self.client.connect()
+    self.irc.connect()
+    self.client.run()
+
+  def disconnect(self):
+    self.client.disconnect()
+    self.irc.disconnect()
+    self.client.run(timeout=2)
+
+  @presence_stanza_handler("subscribe")
+  def handle_presence_subscribe(self, stanza):
+    logging.info("{0} requested presence subscription"
+                          .format(stanza.from_jid))
+    presence = Presence(to_jid = stanza.from_jid.bare(),
+                          stanza_type = "subscribe")
+    return [stanza.make_accept_response(), presence]
+
+  @presence_stanza_handler("subscribed")
+  def handle_presence_subscribed(self, stanza):
+    logging.info("{0!r} accepted our subscription request"
+                          .format(stanza.from_jid))
+    return True
+
+  @presence_stanza_handler("unsubscribe")
+  def handle_presence_unsubscribe(self, stanza):
+    logging.info("{0} canceled presence subscription"
+                          .format(stanza.from_jid))
+    presence = Presence(to_jid = stanza.from_jid.bare(),
+                          stanza_type = "unsubscribe")
+    return [stanza.make_accept_response(), presence]
+
+  @presence_stanza_handler("unsubscribed")
+  def handle_presence_unsubscribed(self, stanza):
+    logging.info("{0!r} acknowledged our subscrption cancelation"
+                          .format(stanza.from_jid))
+    return True
+
+  @message_stanza_handler()
+  def handle_message(self, stanza):
+    if stanza.body is None:
+      return
+    logging.info('Received from %s: %s', stanza.from_jid.bare(), stanza.body)
+    if stanza.from_jid.bare() == targetJID:
+      self.send2irc(stanza.body)
+    else:
+      self.send_message(stanza.from_jid, "I'm a bot NOT working for you.")
+    return True
+
+  def send2irc(self, msg):
+    self.irc.sendmsg(msg)
+
+  def sendmsg(self, msg):
+    logging.info('sending to xmpp: %s', msg)
+    self.send_message(targetJID, msg)
+
+  def send_message(self, receiver, msg):
+    if isinstance(receiver, str):
+      receiver = JID(receiver)
+
+    m = Message(
+      stanza_type = 'chat',
+      from_jid = self.jid,
+      to_jid = receiver,
+      body = msg,
+    )
+    self.send(m)
+
+  def send(self, stanza):
+    self.client.stream.send(stanza)
+
+  @event_handler(DisconnectedEvent)
+  def handle_disconnected(self, event):
+    """Quit the main loop upon disconnection."""
+    return QUIT
+
+  @event_handler()
+  def handle_all(self, event):
+    """Log all events."""
+    logging.info("-- {0}".format(event))
+
+class IRC:
+  def __init__(self, config, xmpp):
+    self.sock = socket.socket()
+    self.iostream = tornado.iostream.IOStream(self.sock)
+    self.config = config
+    self.xmpp = xmpp
+    self.joined = False
+
+  def connect(self):
+    logging.info('connecting to irc server %r...', self.config['server'])
+    self.iostream.connect(self.config['server'],
+                          partial(self._read_and_discard, self._nick))
+
+  def disconnect(self):
+    logging.info('quit irc...')
+    self.iostream.write(b'QUIT')
+
+  def _read_and_discard(self, callback):
+    self.iostream.read_until(b'\r\n', callback)
+
+  def _nick(self, nothing):
+    logging.info('set my nick')
+    self.iostream.write(
+      ('NICK %s\r\n' % self.config['nick']).encode(),
+      self._user,
+    )
+
+  def _user(self):
+    logging.info('the user command')
+    self.iostream.write(('USER {nick} {nick} {host} :{realname}\r\n'.format_map(
+      self.config)).encode())
+    self.iostream.read_until(b'Welcome', self._join)
+
+  def _join(self, nothing):
+    logging.info('joining...')
+    self.iostream.write(('JOIN #%s\r\n' % self.config['channel']).encode())
+    self.joined = True
+    self.iostream.read_until(b'\r\n', self.message_received)
+
+  def message_received(self, msg):
+    msg = msg.decode(errors='replace')
+    logging.info('irc received: %s', msg)
+    self.iostream.read_until(b'\r\n', self.message_received)
+    try:
+      user, cmd, who, msg = msg.split(None, 3)
+    except ValueError:
+      return
+    if cmd != 'PRIVMSG':
+      return
+    if who != '#' + self.config['channel']:
+      return
+    username = user[1:user.find('!')]
+    self.xmpp.sendmsg('[%s] %s' % (username, msg[1:-2]))
+
+  def sendmsg(self, msg):
+    if not self.joined:
+      return
+    logging.info('sending to irc: %s', msg)
+    ch = self.config['channel']
+    for m in msg.split('\n'):
+      self.iostream.write(('PRIVMSG #%s :%s\r\n' % (ch, m)).encode())
+
+def main():
+  settings = XMPPSettings({
+    "software_name": "IrcBot",
+    'starttls': True,
+    'password': password,
+    'tls_verify_peer': False,
+    'software_os': 'Linux',
+  })
+
+  if False:
+    print("enabling trace")
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    for logger in ("pyxmpp2.IN", "pyxmpp2.OUT"):
+      logger = logging.getLogger(logger)
+      logger.setLevel(logging.DEBUG)
+      logger.addHandler(handler)
+      logger.propagate = False
+
+  bot = IrcBot(BotJID, settings, irc_config)
+  try:
+    bot.run()
+  except KeyboardInterrupt:
+    bot.disconnect()
+
+if __name__ == '__main__':
+  main()
