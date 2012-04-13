@@ -1,5 +1,0 @@
-Dependency
-
-* tornado, git://github.com/facebook/tornado.git, https://github.com/facebook/tornado
-* modified pyxmpp2, git://github.com/lilydjwg/pyxmpp2.git, https://github.com/lilydjwg/pyxmpp2
-* utils from winterpy, git://github.com/lilydjwg/pyxmpp2.git, https://github.com/lilydjwg/winterpy
