@@ -124,9 +124,10 @@ class IRC:
     self.joined = False
 
   def connect(self):
-    logging.info('connecting to irc server %r...', self.config['server'])
-    self.iostream.connect(self.config['server'],
-                          partial(self._read_and_discard, self._nick))
+    server = self.config['server']
+    logging.info('connecting to irc server %r...', server)
+    self.iostream.connect(server, partial(self._read_and_discard, self._nick))
+    self.pong = ('PONG %s\r\n' % server).encode()
 
   def disconnect(self):
     logging.info('quit irc...')
@@ -156,8 +157,11 @@ class IRC:
 
   def message_received(self, msg):
     msg = msg[:-2].decode(errors='replace')
-    logging.info('irc received: %s', msg)
+    logging.debug('irc received: %s', msg)
     self.iostream.read_until(b'\r\n', self.message_received)
+    if msg.startswith('PING :'):
+      self.iostream.write(self.pong)
+      return
     try:
       user, cmd, who, msg = msg.split(None, 3)
     except ValueError:
