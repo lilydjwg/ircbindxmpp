@@ -127,7 +127,7 @@ class IRC:
     server = self.config['server']
     logging.info('connecting to irc server %r...', server)
     self.iostream.connect(server, partial(self._read_and_discard, self._nick))
-    self.pong = ('PONG %s\r\n' % server).encode()
+    self.pong = ('PONG %s\r\n' % server[0]).encode()
 
   def disconnect(self):
     logging.info('quit irc...')
