@@ -3,7 +3,7 @@ Dependencies
 
 * [tornado](https://github.com/facebook/tornado), git://github.com/facebook/tornado.git
 * [modified pyxmpp2](https://github.com/lilydjwg/pyxmpp2), git://github.com/lilydjwg/pyxmpp2.git
-* [utils from winterpy](https://github.com/lilydjwg/winterpy), git://github.com/lilydjwg/pyxmpp2.git
+* [utils from winterpy](https://github.com/lilydjwg/winterpy), git://github.com/lilydjwg/winterpy.git
 
 How To Use
 ==========
