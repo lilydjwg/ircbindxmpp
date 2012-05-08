@@ -76,11 +76,11 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
   def handle_message(self, stanza):
     if stanza.body is None:
       return
-    logging.info('Received from %s: %s', stanza.from_jid.bare(), stanza.body)
     if stanza.from_jid.bare() == targetJID:
       self.send2irc(stanza.body)
     else:
       self.send_message(stanza.from_jid, "I'm a bot NOT working for you.")
+      logging.warn('unhandled message from %s: %s', stanza.from_jid.bare(), stanza.body)
     return True
 
   def send2irc(self, msg):
