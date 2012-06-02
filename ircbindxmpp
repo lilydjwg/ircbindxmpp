@@ -84,7 +84,12 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     return True
 
   def send2irc(self, msg):
-    self.irc.sendmsg(msg)
+    try:
+      self.irc.sendmsg(msg)
+    except IOError:
+      logging.warn('IRC disconnected. Reconnecting...')
+      self.irc.connect()
+      self.irc.sendmsg(msg)
 
   def sendmsg(self, msg):
     logging.info('sending to xmpp: %s', msg)
@@ -117,13 +122,13 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
 
 class IRC:
   def __init__(self, config, xmpp):
-    self.sock = socket.socket()
-    self.iostream = tornado.iostream.IOStream(self.sock)
     self.config = config
     self.xmpp = xmpp
     self.joined = False
 
   def connect(self):
+    sock = socket.socket()
+    self.iostream = tornado.iostream.IOStream(sock)
     server = self.config['server']
     logging.info('connecting to irc server %r...', server)
     self.iostream.connect(server, partial(self._read_and_discard, self._nick))
