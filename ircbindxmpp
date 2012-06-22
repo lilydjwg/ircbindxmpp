@@ -20,6 +20,7 @@ from pyxmpp2.interfaces import XMPPFeatureHandler
 from pyxmpp2.interfaces import presence_stanza_handler, message_stanza_handler
 from pyxmpp2.ext.version import VersionProvider
 from pyxmpp2.mainloop.tornado import TornadoMainLoop
+import pyxmpp2.exceptions
 import tornado.iostream
 
 from config import *
@@ -33,6 +34,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     )
     self.irc = IRC(ircconfig, self)
     self.jid = my_jid
+    self._queued_stanza = None
 
   def run(self):
     self.client.connect()
@@ -108,7 +110,20 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     self.send(m)
 
   def send(self, stanza):
-    self.client.stream.send(stanza)
+    try:
+      self.client.stream.send(stanza)
+    except pyxmpp2.exceptions.PyXMPPIOError as e:
+      logging.warn('failed to send stanza %r because of %r', stanza, e)
+      self._queued_stanza = stanza
+      self.disconnect()
+      self.client.connect()
+
+  @event_handler(AuthorizedEvent)
+  def handle_authorized(self, event):
+    stanza = self._queued_stanza
+    if stanza:
+      self.send(stanza)
+      logging.info('queued stanza %r sent', stanza)
 
   @event_handler(DisconnectedEvent)
   def handle_disconnected(self, event):
