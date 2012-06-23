@@ -35,6 +35,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     self.irc = IRC(ircconfig, self)
     self.jid = my_jid
     self._queued_stanza = None
+    self.do_quit = False
 
   def run(self):
     self.client.connect()
@@ -42,6 +43,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     self.client.run()
 
   def disconnect(self):
+    self.do_quit = True
     self.client.disconnect()
     self.irc.disconnect()
     self.client.run(timeout=2)
@@ -110,13 +112,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     self.send(m)
 
   def send(self, stanza):
-    try:
-      self.client.stream.send(stanza)
-    except pyxmpp2.exceptions.PyXMPPIOError as e:
-      logging.warn('failed to send stanza %r because of %r', stanza, e)
-      self._queued_stanza = stanza
-      self.disconnect()
-      self.client.connect()
+    self.client.stream.send(stanza)
 
   @event_handler(AuthorizedEvent)
   def handle_authorized(self, event):
@@ -128,7 +124,12 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
   @event_handler(DisconnectedEvent)
   def handle_disconnected(self, event):
     """Quit the main loop upon disconnection."""
-    return QUIT
+    if self.do_quit:
+      return QUIT
+    else:
+      logging.warn('XMPP disconnected. Reconnecting...')
+      self.client.connect()
+      return True
 
   @event_handler()
   def handle_all(self, event):
