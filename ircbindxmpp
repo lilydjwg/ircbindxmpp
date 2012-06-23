@@ -210,6 +210,11 @@ def main():
     'software_os': 'Linux',
   })
 
+  try:
+    settings['server'] = xmpp_server
+  except NameError:
+    pass
+
   if False:
     print("enabling trace")
     handler = logging.StreamHandler()
