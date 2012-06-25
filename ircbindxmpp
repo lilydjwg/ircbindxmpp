@@ -27,15 +27,19 @@ from config import *
 
 class IrcBot(EventHandler, XMPPFeatureHandler):
   def __init__(self, my_jid, settings, ircconfig):
-    version_provider = VersionProvider(settings)
-    self.client = Client(
-      my_jid, [self, version_provider], settings,
-      main_loop=TornadoMainLoop(),
-    )
-    self.irc = IRC(ircconfig, self)
     self.jid = my_jid
+    self.settings = settings
+    self.newclient()
+    self.irc = IRC(ircconfig, self)
     self._queued_stanza = None
     self.do_quit = False
+
+  def newclient(self):
+    version_provider = VersionProvider(self.settings)
+    self.client = Client(
+      self.jid, [self, version_provider], self.settings,
+      main_loop=TornadoMainLoop(),
+    )
 
   def run(self):
     self.client.connect()
@@ -128,6 +132,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
       return QUIT
     else:
       logging.warn('XMPP disconnected. Reconnecting...')
+      self.newclient()
       self.client.connect()
       return True
 
