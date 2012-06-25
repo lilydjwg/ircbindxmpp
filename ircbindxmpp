@@ -97,7 +97,7 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     except IOError:
       logging.warn('IRC disconnected. Reconnecting...')
       self.irc.connect()
-      self.irc.sendmsg(msg)
+      self.irc.pending(msg)
 
   def sendmsg(self, msg):
     logging.info('sending to xmpp: %s', msg)
@@ -149,6 +149,7 @@ class IRC:
 
   def connect(self):
     sock = socket.socket()
+    self._pending_msg = None
     self.iostream = tornado.iostream.IOStream(sock)
     server = self.config['server']
     logging.info('connecting to irc server %r...', server)
@@ -179,7 +180,14 @@ class IRC:
     logging.info('joining...')
     self.iostream.write(('JOIN #%s\r\n' % self.config['channel']).encode())
     self.joined = True
+    if self._pending_msg:
+      logging.info('sending pending msg...')
+      self.sendmsg(self._pending_msg)
     self.iostream.read_until(b'\r\n', self.message_received)
+
+  def pending(self, msg):
+    '''make a new message sent when connected and joined'''
+    self._pending_msg = msg
 
   def message_received(self, msg):
     msg = msg[:-2].decode(errors='replace')
