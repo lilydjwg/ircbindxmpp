@@ -88,7 +88,7 @@ class IRC:
     logging.info('the user command')
     self.write(('USER {nick} {nick} {host} :{realname}'.format_map(
       self.config)))
-    self.iostream.read_until(b'Welcome', self._join)
+    self.iostream.read_until(b'/MOTD', self._join)
 
   def _join(self, nothing):
     passwd = self.config.get('password', None)
