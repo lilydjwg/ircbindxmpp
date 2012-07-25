@@ -1,84 +1,36 @@
 #!/usr/bin/env python3
 # vim:fileencoding=utf-8
 
+# TODO: 多行消息前每行消息加用户昵称
+#       被踢自动重边
+
 import sys
 import logging
 import socket
 from functools import partial
 
 from myutils import enable_pretty_logging
-enable_pretty_logging(logging.INFO)
+enable_pretty_logging(logging.DEBUG)
 
-from pyxmpp2.jid import JID
-from pyxmpp2.message import Message
-from pyxmpp2.presence import Presence
-from pyxmpp2.client import Client
-from pyxmpp2.settings import XMPPSettings
-from pyxmpp2.interfaces import EventHandler, event_handler, QUIT
-from pyxmpp2.streamevents import AuthorizedEvent, DisconnectedEvent
-from pyxmpp2.interfaces import XMPPFeatureHandler
-from pyxmpp2.interfaces import presence_stanza_handler, message_stanza_handler
-from pyxmpp2.ext.version import VersionProvider
+from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
 from pyxmpp2.mainloop.tornado import TornadoMainLoop
-import pyxmpp2.exceptions
 import tornado.iostream
 
 from config import *
 
-class IrcBot(EventHandler, XMPPFeatureHandler):
+class IrcBot(XMPPBot):
   def __init__(self, my_jid, settings, ircconfig):
-    self.jid = my_jid
-    self.settings = settings
-    self.newclient()
     self.irc = IRC(ircconfig, self)
-    self._queued_stanza = None
-    self.do_quit = False
+    super().__init__(my_jid, settings, autoReconnect=True,
+                     main_loop=TornadoMainLoop())
 
-  def newclient(self):
-    version_provider = VersionProvider(self.settings)
-    self.client = Client(
-      self.jid, [self, version_provider], self.settings,
-      main_loop=TornadoMainLoop(),
-    )
-
-  def run(self):
-    self.client.connect()
+  def start(self):
     self.irc.connect()
-    self.client.run()
+    super().start()
 
   def disconnect(self):
-    self.do_quit = True
-    self.client.disconnect()
     self.irc.disconnect()
-    self.client.run(timeout=2)
-
-  @presence_stanza_handler("subscribe")
-  def handle_presence_subscribe(self, stanza):
-    logging.info("{0} requested presence subscription"
-                          .format(stanza.from_jid))
-    presence = Presence(to_jid = stanza.from_jid.bare(),
-                          stanza_type = "subscribe")
-    return [stanza.make_accept_response(), presence]
-
-  @presence_stanza_handler("subscribed")
-  def handle_presence_subscribed(self, stanza):
-    logging.info("{0!r} accepted our subscription request"
-                          .format(stanza.from_jid))
-    return True
-
-  @presence_stanza_handler("unsubscribe")
-  def handle_presence_unsubscribe(self, stanza):
-    logging.info("{0} canceled presence subscription"
-                          .format(stanza.from_jid))
-    presence = Presence(to_jid = stanza.from_jid.bare(),
-                          stanza_type = "unsubscribe")
-    return [stanza.make_accept_response(), presence]
-
-  @presence_stanza_handler("unsubscribed")
-  def handle_presence_unsubscribed(self, stanza):
-    logging.info("{0!r} acknowledged our subscrption cancelation"
-                          .format(stanza.from_jid))
-    return True
+    super().disconnect()
 
   @message_stanza_handler()
   def handle_message(self, stanza):
@@ -103,44 +55,6 @@ class IrcBot(EventHandler, XMPPFeatureHandler):
     logging.info('sending to xmpp: %s', msg)
     self.send_message(targetJID, msg)
 
-  def send_message(self, receiver, msg):
-    if isinstance(receiver, str):
-      receiver = JID(receiver)
-
-    m = Message(
-      stanza_type = 'chat',
-      from_jid = self.jid,
-      to_jid = receiver,
-      body = msg,
-    )
-    self.send(m)
-
-  def send(self, stanza):
-    self.client.stream.send(stanza)
-
-  @event_handler(AuthorizedEvent)
-  def handle_authorized(self, event):
-    stanza = self._queued_stanza
-    if stanza:
-      self.send(stanza)
-      logging.info('queued stanza %r sent', stanza)
-
-  @event_handler(DisconnectedEvent)
-  def handle_disconnected(self, event):
-    """Quit the main loop upon disconnection."""
-    if self.do_quit:
-      return QUIT
-    else:
-      logging.warn('XMPP disconnected. Reconnecting...')
-      self.newclient()
-      self.client.connect()
-      return True
-
-  @event_handler()
-  def handle_all(self, event):
-    """Log all events."""
-    logging.info("-- {0}".format(event))
-
 class IRC:
   def __init__(self, config, xmpp):
     self.config = config
@@ -158,7 +72,7 @@ class IRC:
 
   def disconnect(self):
     logging.info('quit irc...')
-    self.iostream.write(b'QUIT')
+    self.iostream.write(b'QUIT\r\n')
 
   def _read_and_discard(self, callback):
     self.iostream.read_until(b'\r\n', callback)
@@ -183,6 +97,9 @@ class IRC:
     if self._pending_msg:
       logging.info('sending pending msg...')
       self.sendmsg(self._pending_msg)
+    passwd = self.config.get('password', None)
+    if passwd:
+      self.iostream.write(('PRIVMSG #NickServ identify %s\r\n' % passwd).encode())
     self.iostream.read_until(b'\r\n', self.message_received)
 
   def pending(self, msg):
@@ -241,7 +158,7 @@ def main():
 
   bot = IrcBot(BotJID, settings, irc_config)
   try:
-    bot.run()
+    bot.start()
   except KeyboardInterrupt:
     bot.disconnect()
 

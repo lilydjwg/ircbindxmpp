@@ -8,6 +8,7 @@ irc_config = {
   'nick': 'mynick',
   'host': 'example.org',
   'realname': 'my name',
+  # 'password': 'blahblah',
 }
 password = 'BotJID password'
 
