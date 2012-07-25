@@ -91,6 +91,9 @@ class IRC:
     self.iostream.read_until(b'Welcome', self._join)
 
   def _join(self, nothing):
+    if passwd:
+      logging.info('identifying...')
+      self.iostream.write(('PRIVMSG #NickServ identify %s\r\n' % passwd).encode())
     logging.info('joining...')
     self.iostream.write(('JOIN #%s\r\n' % self.config['channel']).encode())
     self.joined = True
@@ -98,8 +101,6 @@ class IRC:
       logging.info('sending pending msg...')
       self.sendmsg(self._pending_msg)
     passwd = self.config.get('password', None)
-    if passwd:
-      self.iostream.write(('PRIVMSG #NickServ identify %s\r\n' % passwd).encode())
     self.iostream.read_until(b'\r\n', self.message_received)
 
   def pending(self, msg):
