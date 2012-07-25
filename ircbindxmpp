@@ -97,7 +97,7 @@ class IRC:
       self.write(('PRIVMSG NickServ identify %s %s' % (
         self.config['nick'],
         passwd,
-      ))
+      )))
     logging.info('joining...')
     self.write(('JOIN #%s\r\n' % self.config['channel']))
     self.joined = True
