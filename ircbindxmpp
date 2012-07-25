@@ -68,35 +68,35 @@ class IRC:
     server = self.config['server']
     logging.info('connecting to irc server %r...', server)
     self.iostream.connect(server, partial(self._read_and_discard, self._nick))
-    self.pong = ('PONG %s\r\n' % server[0]).encode()
+    self.pong = ('PONG %s' % server[0]).encode()
 
   def disconnect(self):
     logging.info('quit irc...')
-    self.iostream.write(b'QUIT\r\n')
+    self.write(b'QUIT')
 
   def _read_and_discard(self, callback):
     self.iostream.read_until(b'\r\n', callback)
 
   def _nick(self, nothing):
     logging.info('set my nick')
-    self.iostream.write(
-      ('NICK %s\r\n' % self.config['nick']).encode(),
+    self.write(
+      ('NICK %s' % self.config['nick']),
       self._user,
     )
 
   def _user(self):
     logging.info('the user command')
-    self.iostream.write(('USER {nick} {nick} {host} :{realname}\r\n'.format_map(
-      self.config)).encode())
+    self.write(('USER {nick} {nick} {host} :{realname}'.format_map(
+      self.config)))
     self.iostream.read_until(b'Welcome', self._join)
 
   def _join(self, nothing):
     passwd = self.config.get('password', None)
     if passwd:
       logging.info('identifying...')
-      self.iostream.write(('PRIVMSG #NickServ identify %s\r\n' % passwd).encode())
+      self.write(('PRIVMSG #NickServ identify %s' % passwd))
     logging.info('joining...')
-    self.iostream.write(('JOIN #%s\r\n' % self.config['channel']).encode())
+    self.write(('JOIN #%s\r\n' % self.config['channel']))
     self.joined = True
     if self._pending_msg:
       logging.info('sending pending msg...')
@@ -112,7 +112,7 @@ class IRC:
     logging.debug('irc received: %s', msg)
     self.iostream.read_until(b'\r\n', self.message_received)
     if msg.startswith('PING :'):
-      self.iostream.write(self.pong)
+      self.write(self.pong)
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
@@ -131,7 +131,13 @@ class IRC:
     logging.info('sending to irc: %s', msg)
     ch = self.config['channel']
     for m in msg.split('\n'):
-      self.iostream.write(('PRIVMSG #%s :%s\r\n' % (ch, m)).encode())
+      self.write(('PRIVMSG #%s :%s' % (ch, m)))
+
+  def write(self, msg):
+    logging.debug('Writing to IRC stream: %s', msg)
+    if isinstance(msg, str):
+      msg = msg.encode('utf-8')
+    self.iostream.write(msg + b'\r\n')
 
 def main():
   settings = XMPPSettings({
