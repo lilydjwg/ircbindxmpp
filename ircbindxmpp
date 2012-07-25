@@ -133,11 +133,11 @@ class IRC:
     for m in msg.split('\n'):
       self.write(('PRIVMSG #%s :%s' % (ch, m)))
 
-  def write(self, msg):
+  def write(self, msg, cb=None):
     logging.debug('Writing to IRC stream: %s', msg)
     if isinstance(msg, str):
       msg = msg.encode('utf-8')
-    self.iostream.write(msg + b'\r\n')
+    self.iostream.write(msg + b'\r\n', cb)
 
 def main():
   settings = XMPPSettings({
