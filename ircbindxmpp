@@ -94,7 +94,7 @@ class IRC:
     passwd = self.config.get('password', None)
     if passwd:
       logging.info('identifying...')
-      self.write(('PRIVMSG NickServ identify %s %s' % (
+      self.write(('PRIVMSG NickServ :identify %s %s' % (
         self.config['nick'],
         passwd,
       )))
