@@ -94,7 +94,7 @@ class IRC:
     passwd = self.config.get('password', None)
     if passwd:
       logging.info('identifying...')
-      self.write(('PRIVMSG #NickServ identify %s' % passwd))
+      self.write(('PRIVMSG NickServ identify %s' % passwd))
     logging.info('joining...')
     self.write(('JOIN #%s\r\n' % self.config['channel']))
     self.joined = True
