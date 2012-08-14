@@ -2,7 +2,8 @@
 # vim:fileencoding=utf-8
 
 # TODO: 多行消息前每行消息加用户昵称
-#       被踢自动重边
+#       被踢自动重连
+#       IRC 昵称变化
 
 import sys
 import logging
