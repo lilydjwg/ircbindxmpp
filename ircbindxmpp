@@ -127,15 +127,20 @@ class IRC:
     if who != '#' + self.config['channel']:
       return
     username = user[1:user.find('!')]
-    self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
+    if who == 'xmppbot':
+	  self.xmpp.sendmsg('-%s' % msg, username)
+	  return
+	self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
 
-  def sendmsg(self, msg):
+  def sendmsg(self, msg, dest=None):
     if not self.joined:
       return
     logging.info('sending to irc: %s', msg)
     ch = self.config['channel']
+	if dest is None:
+		dest = '#' + str(ch)
     for m in msg.split('\n'):
-      self.write(('PRIVMSG #%s :%s' % (ch, m)))
+      self.write(('PRIVMSG #%s :%s' % (dest, m)))
 
   def write(self, msg, cb=None):
     logging.debug('Writing to IRC stream: %s', msg)
