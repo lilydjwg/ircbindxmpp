@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # vim:fileencoding=utf-8
 
-# TODO: 多行消息前每行消息加用户昵称
-#       被踢自动重连
+# TODO: 被踢自动重连
 #       IRC 昵称变化
+#       整合 XMPP 返回的多行消息
 
 import sys
 import logging
 import socket
 from functools import partial
+import queue
 
 from myutils import enable_pretty_logging
 enable_pretty_logging(logging.DEBUG)
@@ -61,6 +62,7 @@ class IRC:
     self.config = config
     self.xmpp = xmpp
     self.joined = False
+    self.userpmqueue = queue.Queue()
 
   def connect(self):
     sock = socket.socket()
@@ -120,27 +122,38 @@ class IRC:
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
+      msg = msg[1:]
     except ValueError:
       return
     if cmd != 'PRIVMSG':
       return
-    if who != '#' + self.config['channel']:
-      return
     username = user[1:user.find('!')]
-    if who == 'xmppbot':
-	  self.xmpp.sendmsg('-%s' % msg, username)
-	  return
-	self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
 
-  def sendmsg(self, msg, dest=None):
+    if who == self.config['nick']:
+      if msg.startswith('-'):
+        self.userpmqueue.put(username)
+        self.xmpp.sendmsg(msg)
+      else:
+        self.write('PRIVMSG %s :现仅支持传送 XMPP 群命令，以「-」开头。' % username)
+    elif who == '#' + self.config['channel']:
+      self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
+
+  def sendmsg(self, msg):
     if not self.joined:
       return
-    logging.info('sending to irc: %s', msg)
-    ch = self.config['channel']
-	if dest is None:
-		dest = '#' + str(ch)
+    if msg.startswith('['):
+      who = msg.split(']', 1)[0] + '] '
+      msg = msg[len(who):]
+      dest = '#' + self.config['channel']
+    else:
+      if not msg.startswith('_'):
+        dest = self.userpmqueue.get()
+        who = ''
+      else:
+        return
+    logging.info('sending to irc %s: %s', dest, msg)
     for m in msg.split('\n'):
-      self.write(('PRIVMSG #%s :%s' % (dest, m)))
+      self.write('PRIVMSG %s :%s' % (dest, who + m))
 
   def write(self, msg, cb=None):
     logging.debug('Writing to IRC stream: %s', msg)
