@@ -11,7 +11,7 @@ import socket
 from functools import partial
 
 from myutils import enable_pretty_logging
-enable_pretty_logging(logging.DEBUG)
+enable_pretty_logging(logging.INFO)
 
 from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
 from pyxmpp2.mainloop.tornado import TornadoMainLoop
