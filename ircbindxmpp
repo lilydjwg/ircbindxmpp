@@ -120,6 +120,7 @@ class IRC:
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
+      msg = msg[1:].strip('\x01')
     except ValueError:
       return
     if cmd != 'PRIVMSG':
@@ -127,7 +128,7 @@ class IRC:
     if who != '#' + self.config['channel']:
       return
     username = user[1:user.find('!')]
-    self.xmpp.sendmsg('[%s] %s' % (username, msg[1:]))
+    self.xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def sendmsg(self, msg):
     if not self.joined:
