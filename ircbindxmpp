@@ -120,12 +120,17 @@ class IRC:
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
-      msg = msg[1:].strip('\x01')
     except ValueError:
       return
     if cmd != 'PRIVMSG':
       return
     if who != '#' + self.config['channel']:
+      return
+    try:
+      msg = msg[1:]
+      if msg.startswith('\x01ACTION '):
+        msg = '*' + msg[7:-1]
+    except IndexError:
       return
     username = user[1:user.find('!')]
     self.xmpp.sendmsg('[%s] %s' % (username, msg))
