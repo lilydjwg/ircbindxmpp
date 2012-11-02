@@ -27,11 +27,18 @@ class IrcBot(XMPPBot):
 
   def start(self):
     self.irc.connect()
+    self.cb = tornado.ioloop.PeriodicCallback(self.write_space, 3600000)
+    self.cb.start()
     super().start()
 
   def disconnect(self):
     self.irc.disconnect()
+    self.cb.stop()
     super().disconnect()
+
+  def write_space(self):
+    logging.info('sending space')
+    self.client.stream.transport._write(b' ')
 
   @message_stanza_handler()
   def handle_message(self, stanza):
