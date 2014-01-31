@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# vim:fileencoding=utf-8
 
 # TODO: 多行消息前每行消息加用户昵称
 #       被踢自动重连
@@ -9,9 +8,6 @@ import sys
 import logging
 import socket
 from functools import partial
-
-from myutils import enable_pretty_logging
-enable_pretty_logging(logging.INFO)
 
 from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
 from pyxmpp2.mainloop.tornado import TornadoMainLoop
@@ -76,7 +72,6 @@ class IRC:
     server = self.config['server']
     logging.info('connecting to irc server %r...', server)
     self.iostream.connect(server, partial(self._read_and_discard, self._nick))
-    self.pong = ('PONG %s' % server[0]).encode()
 
   def disconnect(self):
     logging.info('quit irc...')
@@ -86,6 +81,7 @@ class IRC:
     self.iostream.read_until(b'\r\n', callback)
 
   def _nick(self, nothing):
+    logging.debug('recved: %s', nothing)
     logging.info('set my nick')
     self.write(
       ('NICK %s' % self.config['nick']),
@@ -99,6 +95,7 @@ class IRC:
     self.iostream.read_until(b'/MOTD', self._join)
 
   def _join(self, nothing):
+    logging.debug('recved: %s', nothing)
     passwd = self.config.get('password', None)
     if passwd:
       logging.info('identifying...')
@@ -123,7 +120,7 @@ class IRC:
     logging.debug('irc received: %s', msg)
     self.iostream.read_until(b'\r\n', self.message_received)
     if msg.startswith('PING :'):
-      self.write(self.pong)
+      self.pong(msg)
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
@@ -141,6 +138,10 @@ class IRC:
       return
     username = user[1:user.find('!')]
     self.xmpp.sendmsg('[%s] %s' % (username, msg))
+
+  def pong(self, msg):
+    host = msg.split(':')[1]
+    self.write('PONG :' + host)
 
   def sendmsg(self, msg):
     if not self.joined:
@@ -187,4 +188,15 @@ def main():
     bot.disconnect()
 
 if __name__ == '__main__':
+  import argparse
+  import nicelogger
+
+  parser = argparse.ArgumentParser(
+    description='Connect XMPP and IRC channel together')
+  parser.add_argument('-l', '--logging',
+                      choices=('debug', 'info', 'warning', 'error'), default='info',
+                      help='logging level (default: info)')
+  args = parser.parse_args()
+  nicelogger.enable_pretty_logging(getattr(logging, args.logging.upper()))
+
   main()
