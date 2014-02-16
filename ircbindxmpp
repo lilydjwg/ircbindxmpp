@@ -93,7 +93,9 @@ class IRC:
     )
 
   def send(self, cmd, *args, callback=None):
-    if not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
+    args = list(args)
+    if args and \
+       not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
       args[-1] = ":" + args[-1]
     logger.debug('send: %s', args)
     cmd = cmd.upper()
