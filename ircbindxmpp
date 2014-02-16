@@ -64,8 +64,8 @@ class IrcBot(XMPPBot):
 
 class IRC:
   def __init__(self, config, xmpp):
-    self.xmpp = xmpp
-    self.joined = False
+    self._xmpp = xmpp
+    self._joined = False
 
     ch = config['channel']
     if ch[0] != '#':
@@ -122,7 +122,7 @@ class IRC:
       ))
     logging.info('joining...')
     self.send('JOIN', self.channel)
-    self.joined = True
+    self._joined = True
     if self._pending_msg:
       logging.info('sending pending msg...')
       self.sendmsg(self._pending_msg)
@@ -154,14 +154,14 @@ class IRC:
     except IndexError:
       return
     username = user[1:user.find('!')]
-    self.xmpp.sendmsg('[%s] %s' % (username, msg))
+    self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
     host = msg.split(':')[1]
     self.send('PONG', host)
 
   def sendmsg(self, msg):
-    if not self.joined:
+    if not self._joined:
       return
     logging.info('sending to irc: %s', msg)
     for m in msg.split('\n'):
