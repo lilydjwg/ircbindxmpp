@@ -8,6 +8,7 @@ import re
 import sys
 import logging
 import socket
+import time
 from functools import partial
 
 from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
@@ -63,6 +64,9 @@ class IrcBot(XMPPBot):
     self.send_message(targetJID, msg)
 
 class IRC:
+  _watchdog_to = None
+  _time_out = 360
+
   def __init__(self, config, xmpp):
     self._xmpp = xmpp
     self._joined = False
@@ -77,6 +81,17 @@ class IRC:
     self.server = config['server']
     self.password = config.get('password', None)
 
+  def _kick_watchdog(self):
+    t = time.time()
+    loop = self._io_loop
+
+    if self._watchdog_to:
+      loop.remove_timeout(self._watchdog_to)
+    self._watchdog_to = loop.add_timeout(
+      t + self._time_out,
+      partial(self.connect, reconnect=True)
+    )
+
   def send(self, cmd, *args, callback=None):
     if not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
       args[-1] = ":" + args[-1]
@@ -84,7 +99,10 @@ class IRC:
     d = ' '.join(args).encode('utf-8') + b'\r\n'
     self.iostream.write(d, callback)
 
-  def connect(self):
+  def connect(self, reconnect=False):
+    if reconnect:
+      self.disconnect()
+
     sock = socket.socket()
     self._pending_msg = None
     self.iostream = tornado.iostream.IOStream(sock)
