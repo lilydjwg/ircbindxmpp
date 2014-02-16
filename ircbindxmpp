@@ -95,7 +95,7 @@ class IRC:
   def send(self, cmd, *args, callback=None):
     args = list(args)
     if args and \
-       not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
+       (not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1])):
       args[-1] = ":" + args[-1]
     cmd = cmd.upper()
     args.insert(0, cmd)
