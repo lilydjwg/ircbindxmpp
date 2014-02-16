@@ -96,6 +96,8 @@ class IRC:
     if not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
       args[-1] = ":" + args[-1]
     logger.debug('send: %s', args)
+    cmd = cmd.upper()
+    args.insert(0, cmd)
     d = ' '.join(args).encode('utf-8') + b'\r\n'
     self.iostream.write(d, callback)
 
