@@ -4,6 +4,7 @@
 #       被踢自动重连
 #       IRC 昵称变化
 
+import re
 import sys
 import logging
 import socket
@@ -14,6 +15,8 @@ from pyxmpp2.mainloop.tornado import TornadoMainLoop
 import tornado.iostream
 
 from config import *
+
+logger = logging.getLogger(__name__)
 
 class IrcBot(XMPPBot):
   def __init__(self, my_jid, settings, ircconfig):
@@ -65,6 +68,13 @@ class IRC:
     self.xmpp = xmpp
     self.joined = False
 
+  def send(self, cmd, *args, callback=None):
+    if not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1]):
+      args[-1] = ":" + args[-1]
+    logger.debug('send: %s', args)
+    d = ' '.join(args).encode('utf-8') + b'\r\n'
+    self.iostream.write(d, callback)
+
   def connect(self):
     sock = socket.socket()
     self._pending_msg = None
@@ -75,7 +85,7 @@ class IRC:
 
   def disconnect(self):
     logging.info('quit irc...')
-    self.write(b'QUIT')
+    self.send('QUIT')
 
   def _read_and_discard(self, callback):
     self.iostream.read_until(b'\r\n', callback)
@@ -83,15 +93,17 @@ class IRC:
   def _nick(self, nothing):
     logging.debug('recved: %s', nothing)
     logging.info('set my nick')
-    self.write(
-      ('NICK %s' % self.config['nick']),
-      self._user,
+    self.send(
+      'NICK', self.config['nick'],
+      callback = self._user,
     )
 
   def _user(self):
     logging.info('the user command')
-    self.write(('USER {nick} {nick} {host} :{realname}'.format_map(
-      self.config)))
+    nick = self.config['nick']
+    host = self.config['host']
+    realname = self.config['realname']
+    self.send('USER', nick, nick, host, realname)
     self.iostream.read_until(b'/MOTD', self._join)
 
   def _join(self, nothing):
@@ -99,12 +111,12 @@ class IRC:
     passwd = self.config.get('password', None)
     if passwd:
       logging.info('identifying...')
-      self.write(('PRIVMSG NickServ :identify %s %s' % (
+      self.send('PRIVMSG', 'NickServ', 'identify %s %s' % (
         self.config['nick'],
         passwd,
-      )))
+      ))
     logging.info('joining...')
-    self.write(('JOIN #%s\r\n' % self.config['channel']))
+    self.send('JOIN', '#' + self.config['channel'])
     self.joined = True
     if self._pending_msg:
       logging.info('sending pending msg...')
@@ -141,7 +153,7 @@ class IRC:
 
   def pong(self, msg):
     host = msg.split(':')[1]
-    self.write('PONG :' + host)
+    self.send('PONG', host)
 
   def sendmsg(self, msg):
     if not self.joined:
@@ -149,13 +161,7 @@ class IRC:
     logging.info('sending to irc: %s', msg)
     ch = self.config['channel']
     for m in msg.split('\n'):
-      self.write(('PRIVMSG #%s :%s' % (ch, m)))
-
-  def write(self, msg, cb=None):
-    logging.debug('Writing to IRC stream: %s', msg)
-    if isinstance(msg, str):
-      msg = msg.encode('utf-8')
-    self.iostream.write(msg + b'\r\n', cb)
+      self.send('PRIVMSG', '#' + ch, m)
 
 def main():
   settings = XMPPSettings({
