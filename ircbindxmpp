@@ -158,7 +158,12 @@ class IRC:
   def message_received(self, msg):
     msg = msg[:-2].decode(errors='replace')
     logging.debug('irc received: %s', msg)
-    self.iostream.read_until(b'\r\n', self.message_received)
+    try:
+      self.iostream.read_until(b'\r\n', self.message_received)
+    except tornado.iostream.StreamClosedError:
+      logging.warn('IRC server closed the connection.')
+      self.connect(reconnect=True)
+      return
     if msg.startswith('PING :'):
       self.pong(msg)
       return
