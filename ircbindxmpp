@@ -106,7 +106,10 @@ class IRC:
 
   def connect(self, reconnect=False):
     if reconnect:
-      self.disconnect()
+      try:
+        self.disconnect()
+      except tornado.iostream.StreamClosedError:
+        pass
 
     sock = socket.socket()
     self._pending_msg = None
