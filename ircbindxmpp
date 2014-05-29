@@ -118,6 +118,7 @@ class IRC:
     self.iostream.connect(
       self.server,
       partial(self._read_and_discard, self._nick))
+    self._kick_watchdog()
 
   def disconnect(self):
     logging.info('quit irc...')
@@ -140,6 +141,7 @@ class IRC:
     self.iostream.read_until(b'/MOTD', self._join)
 
   def _join(self, nothing):
+    self._kick_watchdog()
     logging.debug('recved: %s', nothing)
     if self.password:
       logging.info('identifying...')
@@ -159,6 +161,7 @@ class IRC:
     self._pending_msg = msg
 
   def message_received(self, msg):
+    self._kick_watchdog()
     msg = msg[:-2].decode(errors='replace')
     logging.debug('irc received: %s', msg)
     try:
@@ -188,6 +191,7 @@ class IRC:
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
+    self._kick_watchdog()
     host = msg.split(':')[1]
     self.send('PONG', host)
 
