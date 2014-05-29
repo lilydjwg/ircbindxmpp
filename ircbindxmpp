@@ -14,6 +14,7 @@ from functools import partial
 from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
 from pyxmpp2.mainloop.tornado import TornadoMainLoop
 import tornado.iostream
+import tornado.ioloop
 
 from config import *
 
@@ -68,6 +69,7 @@ class IRC:
   _time_out = 360
 
   def __init__(self, config, xmpp):
+    self._io_loop = tornado.ioloop.IOLoop.current()
     self._xmpp = xmpp
     self._joined = False
 
