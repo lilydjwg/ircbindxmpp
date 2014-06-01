@@ -196,6 +196,7 @@ class IRC:
     self._kick_watchdog()
     host = msg.split(':')[1]
     self.send('PONG', host)
+    logging.info('PONG sent')
 
   def sendmsg(self, msg):
     if not self._joined:
