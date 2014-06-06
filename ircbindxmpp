@@ -66,7 +66,7 @@ class IrcBot(XMPPBot):
 
 class IRC:
   _watchdog_to = None
-  _time_out = 360
+  _time_out = 200
 
   def __init__(self, config, xmpp):
     self._io_loop = tornado.ioloop.IOLoop.current()
