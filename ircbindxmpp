@@ -194,8 +194,7 @@ class IRC:
 
   def pong(self, msg):
     self._kick_watchdog()
-    host = msg.split(':')[1]
-    self.send('PONG', host)
+    self.send('PONG', self.nick)
     logging.info('PONG sent')
 
   def sendmsg(self, msg):
