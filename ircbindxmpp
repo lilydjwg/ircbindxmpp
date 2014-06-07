@@ -201,6 +201,7 @@ class IRC:
     if not self._joined:
       return
     logging.info('sending to irc: %s', msg)
+    self._kick_watchdog()
     for m in msg.split('\n'):
       self.send('PRIVMSG', self.channel, m)
 
