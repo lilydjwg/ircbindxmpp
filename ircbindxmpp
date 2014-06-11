@@ -125,6 +125,7 @@ class IRC:
   def disconnect(self):
     logging.info('quit irc...')
     self.send('QUIT')
+    self.iostream.close()
 
   def _read_and_discard(self, callback):
     self.iostream.read_until(b'\r\n', callback)
