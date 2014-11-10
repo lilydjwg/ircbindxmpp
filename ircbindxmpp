@@ -165,7 +165,15 @@ class IRC:
 
   def message_received(self, msg):
     self._kick_watchdog()
-    msg = msg[:-2].decode(errors='replace')
+    msg = msg[:-2]
+    try:
+      msg = msg.decode()
+    except UnicodeDecodeError:
+      try:
+        msg = msg.decode('gb18030', errors='replace')
+        msg = '(in GBK) ' + msg
+      except UnicodeDecodeError:
+        msg = msg.decode(errors='replace')
     logging.debug('irc received: %s', msg)
     try:
       self.iostream.read_until(b'\r\n', self.message_received)
