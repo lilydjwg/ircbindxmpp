@@ -67,6 +67,8 @@ class IrcBot(XMPPBot):
 class IRC:
   _watchdog_to = None
   _time_out = 200
+  LQYMGT_left = {}
+  LQYMGT_re = re.compile(r'LQYMGT([0-9a-fA-F])')
 
   def __init__(self, config, xmpp):
     self._io_loop = tornado.ioloop.IOLoop.current()
@@ -199,6 +201,20 @@ class IRC:
     except IndexError:
       return
     username = user[1:user.find('!')]
+    LQYMGT_left = self.LQYMGT_left
+    if username == 'MeowBot':
+      if ']: ' in msg and msg[0] == ']':
+        meowbot_replyee = msg.split(']:', 1)[0][1:]
+        if LQYMGT_left.get(meowbot_replyee, 0) > 0:
+          if LQYMGT_left[meowbot_replyee] == 1:
+            del LQYMGT_left[meowbot_replyee]
+          else:
+            LQYMGT_left[meowbot_replyee] -= 1
+          logging.warn('ignoring MeowBot message: %r', msg)
+          return
+    m = self.LQYMGT_re.search(msg)
+    if m:
+      LQYMGT_left[username] = int(m.group(1), 16) + LQYMGT_left.get(username, 0)
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
