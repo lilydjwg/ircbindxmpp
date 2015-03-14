@@ -203,8 +203,8 @@ class IRC:
     username = user[1:user.find('!')]
     LQYMGT_left = self.LQYMGT_left
     if username == 'MeowBot':
-      if ']: ' in msg and msg[0] == ']':
-        meowbot_replyee = msg.split(']:', 1)[0][1:]
+      if ': ' in msg:
+        meowbot_replyee = msg.split(': ', 1)[0]
         if LQYMGT_left.get(meowbot_replyee, 0) > 0:
           if LQYMGT_left[meowbot_replyee] == 1:
             del LQYMGT_left[meowbot_replyee]
