@@ -68,7 +68,7 @@ class IRC:
   _watchdog_to = None
   _time_out = 200
   LQYMGT_left = {}
-  LQYMGT_re = re.compile(r'LQYMGT([0-9a-fA-F])')
+  LQYMGT_re = re.compile(r'LQYMGT([1-9a-fA-F])')
 
   def __init__(self, config, xmpp):
     self._io_loop = tornado.ioloop.IOLoop.current()
