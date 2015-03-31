@@ -20,6 +20,15 @@ from config import *
 
 logger = logging.getLogger(__name__)
 
+def splitmsg(m, size):
+  b = m.encode('utf-8')
+  if len(b) <= size:
+    yield m
+  else:
+    prefix = b[:size].decode('utf-8', errors='ignore')
+    yield prefix
+    yield from splitmsg(m[len(prefix):], size)
+
 class IrcBot(XMPPBot):
   def __init__(self, my_jid, settings, ircconfig):
     self.irc = IRC(ircconfig, self)
@@ -227,8 +236,11 @@ class IRC:
       return
     logging.info('sending to irc: %s', msg)
     self._kick_watchdog()
-    for m in msg.split('\n'):
-      self.send('PRIVMSG', self.channel, m)
+    # 'PRIVMSG' ' ' channel ' ' ':' msg '\r\n'
+    size = 512 - (12 + len(self.channel))
+    for line in msg.split('\n'):
+      for m in splitmsg(line, size):
+        self.send('PRIVMSG', self.channel, m)
 
 def main():
   settings = XMPPSettings({
