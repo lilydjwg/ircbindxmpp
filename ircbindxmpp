@@ -221,6 +221,9 @@ class IRC:
             LQYMGT_left[meowbot_replyee] -= 1
           logging.warn('ignoring MeowBot message: %r', msg)
           return
+    elif username == '[Olaf]':
+        logging.warn('ignoring [Olaf] message: %r', msg)
+        return
     m = self.LQYMGT_re.search(msg)
     if m:
       LQYMGT_left[username] = int(m.group(1), 16) + LQYMGT_left.get(username, 0)
