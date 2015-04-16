@@ -221,7 +221,8 @@ class IRC:
     logging.info('sending to irc: %s', msg)
     self._kick_watchdog()
     # 'PRIVMSG' ' ' channel ' ' ':' msg '\r\n'
-    size = 512 - (12 + len(self.channel))
+    # 300 is assumed max length
+    size = 300 - (12 + len(self.channel))
     for line in msg.split('\n'):
       for m in splitmsg(line, size):
         self.send('PRIVMSG', self.channel, m)
