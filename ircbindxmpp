@@ -180,9 +180,9 @@ class IRC:
   def message_received(self, msg):
     self._kick_watchdog()
     msg = msg[:-2]
+    is_gbk = False
     try:
       msg = msg.decode()
-      is_gbk = False
     except UnicodeDecodeError:
       try:
         msg = msg.decode('gb18030')
