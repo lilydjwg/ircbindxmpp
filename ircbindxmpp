@@ -180,10 +180,11 @@ class IRC:
     msg = msg[:-2]
     try:
       msg = msg.decode()
+      is_gbk = False
     except UnicodeDecodeError:
       try:
         msg = msg.decode('gb18030', errors='replace')
-        msg = '(in GBK) ' + msg
+        is_gbk = True
       except UnicodeDecodeError:
         msg = msg.decode(errors='replace')
     logging.debug('irc received: %s', msg)
@@ -211,6 +212,8 @@ class IRC:
     except IndexError:
       return
     username = user[1:user.find('!')]
+    if is_gbk:
+      msg = '(in GBK) ' + msg
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
