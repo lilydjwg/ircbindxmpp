@@ -20,6 +20,8 @@ from config import *
 
 logger = logging.getLogger(__name__)
 
+CONTROLCHARS = re.compile('[\x00-\x1f]')
+
 def splitmsg(m, size):
   b = m.encode('utf-8')
   if len(b) <= size:
@@ -70,6 +72,7 @@ class IrcBot(XMPPBot):
       self.irc.pending(msg)
 
   def sendmsg(self, msg):
+    msg = CONTROLCHARS.sub('', msg)
     logging.info('sending to xmpp: %s', msg)
     self.send_message(targetJID, msg)
 
