@@ -185,7 +185,7 @@ class IRC:
       is_gbk = False
     except UnicodeDecodeError:
       try:
-        msg = msg.decode('gb18030', errors='replace')
+        msg = msg.decode('gb18030')
         is_gbk = True
       except UnicodeDecodeError:
         msg = msg.decode(errors='replace')
