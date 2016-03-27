@@ -21,6 +21,7 @@ from config import *
 logger = logging.getLogger(__name__)
 
 CONTROLCHARS = re.compile('[\x00-\x1f]')
+COLORS = re.compile(r'\x03\d+(?:,\d+)?')
 
 def splitmsg(m, size):
   b = m.encode('utf-8')
@@ -233,6 +234,7 @@ class IRC:
       LQYMGT_left[username] = int(m.group(1), 16) + LQYMGT_left.get(username, 0)
     if is_gbk:
       msg = '(in GBK) ' + msg
+    msg = COLORS.sub('', msg)
     logging.info('IRC msg: %r', msg)
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
