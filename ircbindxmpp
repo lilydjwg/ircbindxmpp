@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 CONTROLCHARS = re.compile('[\x00-\x1f]')
 COLORS = re.compile(r'\x03\d+(?:,\d+)?')
+TG_MSG = re.compile(r'\[(?P<nick>[^]]+)\] (?:「Re (?P<reply>[^:]+): [^」]+」 )?(?P<msg>.+)$')
+TG_BOT = 'teleboto'
 
 def splitmsg(m, size):
   b = m.encode('utf-8')
@@ -236,6 +238,14 @@ class IRC:
       msg = '(in GBK) ' + msg
     msg = COLORS.sub('', msg)
     logging.info('IRC msg: %r', msg)
+    if username == TG_BOT:
+      m = TG_MSG.match(msg)
+      if m:
+        username = m.group('nick')
+        if m.group('reply'):
+          msg = '%s: %s' % (m.group('reply'), m.group('msg'))
+        else:
+          msg = m.group('msg')
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
