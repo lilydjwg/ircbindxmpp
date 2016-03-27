@@ -24,6 +24,8 @@ CONTROLCHARS = re.compile('[\x00-\x1f]')
 COLORS = re.compile(r'\x03\d+(?:,\d+)?')
 TG_MSG = re.compile(r'\[(?P<nick>[^]]+)\] (?:「Re (?P<reply>[^:]+): [^」]+」)?(?P<msg>.+)$')
 TG_BOT = 'teleboto'
+TOX_MSG = re.compile(r'\((?P<nick>[^)]+)\) (?P<msg>.+)$')
+TOX_BOT = 'toxsync'
 
 def splitmsg(m, size):
   b = m.encode('utf-8')
@@ -246,6 +248,11 @@ class IRC:
           msg = '%s: %s' % (m.group('reply'), m.group('msg'))
         else:
           msg = m.group('msg')
+    elif username == TOX_BOT:
+      m = TOX_MSG.match(msg)
+      if m:
+        username = m.group('nick')
+        msg = m.group('msg')
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
