@@ -73,7 +73,6 @@ class IrcBot(XMPPBot):
       self.irc.pending(msg)
 
   def sendmsg(self, msg):
-    msg = CONTROLCHARS.sub('', msg)
     logging.info('sending to xmpp: %s', msg)
     self.send_message(targetJID, msg)
 
@@ -216,6 +215,7 @@ class IRC:
     if is_gbk:
       msg = '(in GBK) ' + msg
     msg = COLORS.sub('', msg)
+    msg = CONTROLCHARS.sub('', msg)
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
