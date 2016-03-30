@@ -245,7 +245,10 @@ class IRC:
       if m:
         username = m.group('nick')
         if m.group('reply'):
-          msg = '%s: %s' % (m.group('reply'), m.group('msg'))
+          replyee = m.group('reply')
+          if replyee.startswith('xmppbot] ['):
+            replyee = replyee[10:]
+          msg = '%s: %s' % (replyee, m.group('msg'))
         else:
           msg = m.group('msg')
     elif username == TOX_BOT:
