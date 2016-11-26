@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 CONTROLCHARS = re.compile('[\x00-\x1f]')
 COLORS = re.compile(r'\x03\d+(?:,\d+)?')
 TG_MSG = re.compile(r'\[(?P<nick>[^]]+)\] (?:「Re (?P<reply>[^:]+): (?P<reply2>\[[^]]+\])?[^」]*」)?(?P<msg>.+)$')
-TG_BOTS = ['teleboto', 'teleboto_']
+TG_BOTS = ['teleboto', 'teleboto_', 'tg2arch']
 TOX_MSG = re.compile(r'\((?P<nick>[^)]+)\) (?P<msg>.+)$')
 TOX_BOT = 'toxsync'
 XMPP_BOT = 'xmppbot'
@@ -230,8 +230,8 @@ class IRC:
             LQYMGT_left[meowbot_replyee] -= 1
           logging.warn('ignoring MeowBot message: %r', msg)
           return
-    elif username == '[Olaf]':
-        logging.warn('ignoring [Olaf] message: %r', msg)
+    elif username in ('[Olaf]', 'ovxw'):
+        logging.warn('ignoring [Olaf]/ovxw message: %r', msg)
         return
     m = self.LQYMGT_re.search(msg)
     if m:
@@ -257,6 +257,11 @@ class IRC:
       if m:
         username = m.group('nick')
         msg = m.group('msg')
+
+    if '.sm ' in msg:
+      logging.warn('ignoring: [%s] %s', username, msg)
+      return
+
     self._xmpp.sendmsg('[%s] %s' % (username, msg))
 
   def pong(self, msg):
