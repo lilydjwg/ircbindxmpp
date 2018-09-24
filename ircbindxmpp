@@ -127,7 +127,10 @@ class IRC:
 
     sock = socket.socket()
     self._pending_msg = None
-    self.iostream = tornado.iostream.IOStream(sock)
+    if ssl:
+      self.iostream = tornado.iostream.SSLIOStream(sock)
+    else:
+      self.iostream = tornado.iostream.IOStream(sock)
     logging.info('connecting to irc server %r...', self.server)
     self.iostream.connect(
       self.server,
