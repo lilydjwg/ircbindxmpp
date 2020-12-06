@@ -134,7 +134,9 @@ class IRC:
     logging.info('connecting to irc server %r...', self.server)
     self.iostream.connect(
       self.server,
-      partial(self._read_and_discard, self._nick))
+      partial(self._read_and_discard, self._nick),
+      server_hostname = self.server[0],
+    )
     self._kick_watchdog()
 
   def disconnect(self):
