@@ -11,5 +11,5 @@ irc_config = {
   # 'password': 'blahblah',
 }
 password = 'BotJID password'
-
+ssl = True
 # vim:se ft=python:
