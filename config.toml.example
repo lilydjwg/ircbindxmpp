@@ -1,0 +1,16 @@
+[xmpp]
+bot = 'me@bot.com/bot'
+group = 'abc@xyz.com'
+password = 'BotJID password'
+verify_cert = true
+
+[irc]
+server = 'irc.freenode.net'
+port = 6667
+channel = 'some-channel'
+nick = 'mynick'
+password = 'blahblah' # optional
+realname = 'my name'
+ssl = true
+
+# vim:se ft=toml:

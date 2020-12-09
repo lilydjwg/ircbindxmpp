@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 # TODO: 多行消息前每行消息加用户昵称
 #       被踢自动重连
 #       IRC 昵称变化
 
 import re
-import sys
 import logging
-import socket
-import time
-from functools import partial
+import asyncio
+from asyncio import Queue
+from typing import Any, Dict
+import signal
 
-from xmppbot import XMPPBot, message_stanza_handler, XMPPSettings
-from pyxmpp2.mainloop.tornado import TornadoMainLoop
-import tornado.iostream
-import tornado.ioloop
-
-from config import *
+import aioxmpp
+import aioxmpp.dispatcher
+import toml
 
 logger = logging.getLogger(__name__)
 
 CONTROLCHARS = re.compile('[\x00-\x1f]')
 COLORS = re.compile(r'\x03\d+(?:,\d+)?')
 TG_MSG = re.compile(r'\[(?P<nick>[^]]+)\] (?:「Re (?P<reply>[^:]+): (?P<reply2>\[[^]]+\])?[^」]*」)?(?P<msg>.+)$')
-TG_BOTS = ['teleboto', 'teleboto_', 'tg2arch']
+TG_BOTS = ['teleboto', 'teleboto_', 'tg2arch', 'tg2offtopic']
 TOX_MSG = re.compile(r'\((?P<nick>[^)]+)\) (?P<msg>.+)$')
 TOX_BOT = 'toxsync'
 XMPP_BOT = 'xmppbot'
@@ -37,177 +36,195 @@ def splitmsg(m, size):
     yield prefix
     yield from splitmsg(m[len(prefix):], size)
 
-class IrcBot(XMPPBot):
-  def __init__(self, my_jid, settings, ircconfig):
-    self.irc = IRC(ircconfig, self)
-    super().__init__(my_jid, settings, autoReconnect=True,
-                     main_loop=TornadoMainLoop())
+class XmppBot:
+  _connected = asyncio.Event()
 
-  def start(self):
-    self.irc.connect()
-    self.cb = tornado.ioloop.PeriodicCallback(self.write_space, 3600000)
-    self.cb.start()
-    super().start()
+  def __init__(self, config: Dict[str, Any], qin: Queue[str], qout: Queue[str]) -> None:
+    self.qin = qin
+    self.qout = qout
 
-  def disconnect(self):
-    self.irc.disconnect()
-    self.cb.stop()
-    super().disconnect()
+    self.jid = aioxmpp.JID.fromstr(config['bot'])
+    self.group = aioxmpp.JID.fromstr(config['group'])
+    self.client = aioxmpp.PresenceManagedClient(
+      self.jid,
+      aioxmpp.make_security_layer(
+        config['password'],
+        no_verify = not config.get('verify_cert', True),
+      ),
+    )
+    self.client.resumption_timeout = 10
 
-  def write_space(self):
-    logging.info('sending space')
-    self.client.stream.transport._write(b' ')
-
-  @message_stanza_handler()
-  def handle_message(self, stanza):
-    if stanza.body is None:
+  def message_received(self, msg: aioxmpp.Message) -> None:
+    if not msg.body:
       return
-    if stanza.from_jid.bare() == targetJID:
-      self.send2irc(stanza.body)
+
+    text = msg.body.any()
+    if msg.from_.bare() == self.group:
+      self.qout.put_nowait(text)
     else:
-      self.send_message(stanza.from_jid, "I'm a bot NOT working for you.")
-      logging.warn('unhandled message from %s: %s', stanza.from_jid.bare(), stanza.body)
-    return True
+      reply = msg.make_reply()
+      reply.body[None] = "I'm a bot NOT working for you."
+      self.client.enqueue(reply)
+      logging.warning('unhandled message from %s: %s', msg.from_, text)
 
-  def send2irc(self, msg):
-    try:
-      self.irc.sendmsg(msg)
-    except IOError:
-      logging.warn('IRC disconnected. Reconnecting...')
-      self.irc.connect()
-      self.irc.pending(msg)
+  async def run(self) -> None:
+    conn = self.connect()
+    msgin = self.process_qin()
+    await asyncio.gather(conn, msgin)
 
-  def sendmsg(self, msg):
+  async def connect(self) -> None:
+    async with self.client.connected():
+      self._connected.set()
+      message_dispatcher = self.client.summon(
+        aioxmpp.dispatcher.SimpleMessageDispatcher
+      )
+
+      # register a message callback here
+      message_dispatcher.register_callback(
+        aioxmpp.MessageType.CHAT,
+        None,
+        self.message_received,
+      )
+      stop_event = self.make_sigint_event()
+      await stop_event.wait()
+
+  def make_sigint_event(self) -> asyncio.Event:
+    event = asyncio.Event()
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(
+      signal.SIGINT,
+      event.set,
+    )
+    return event
+
+  async def process_qin(self):
+    while True:
+      msg = await self.qin.get()
+      await self._connected.wait()
+      self.sendmsg(msg)
+
+  def sendmsg(self, msg: str) -> None:
     logging.info('sending to xmpp: %s', msg)
-    self.send_message(targetJID, msg)
+    m = aioxmpp.Message(
+      to = self.group,
+      type_ = aioxmpp.MessageType.CHAT,
+    )
+    m.body[None] = msg
+    self.client.enqueue(m)
 
-class IRC:
+class IrcBot:
   _watchdog_to = None
   _time_out = 200
-  LQYMGT_left = {}
-  LQYMGT_re = re.compile(r'LQYMGT([1-9a-fA-F])')
+  _connected = asyncio.Event()
 
-  def __init__(self, config, xmpp):
-    self._io_loop = tornado.ioloop.IOLoop.current()
-    self._xmpp = xmpp
-    self._joined = False
-
+  def __init__(self, config: Dict[str, Any], qin: Queue[str], qout: Queue[str]) -> None:
     ch = config['channel']
     if ch[0] != '#':
       ch = '#' + ch
     self.channel = ch
     self.nick = config['nick']
-    self.host = config['host']
     self.realname = config['realname']
     self.server = config['server']
+    self.port = config['port']
     self.password = config.get('password', None)
+    self.ssl = config.get('ssl', True)
 
-  def _kick_watchdog(self):
-    t = time.time()
-    loop = self._io_loop
+    self.qin = qin
+    self.qout = qout
 
+  async def run(self) -> None:
+    conn = self.connect()
+    msgin = self.process_qin()
+    await asyncio.gather(conn, msgin)
+
+  async def process_qin(self):
+    while True:
+      msg = await self.qin.get()
+      await self._connected.wait()
+      await self.sendmsg(msg)
+
+  def _kick_watchdog(self) -> None:
+    loop = asyncio.get_event_loop()
     if self._watchdog_to:
-      loop.remove_timeout(self._watchdog_to)
-    self._watchdog_to = loop.add_timeout(
-      t + self._time_out,
-      partial(self.connect, reconnect=True)
+      self._watchdog_to.cancel()
+
+    self._watchdog_to = loop.call_later(
+      self._time_out,
+      lambda: asyncio.create_task(self.connect(reconnect=True)),
     )
 
-  def send(self, cmd, *args, callback=None):
-    args = list(args)
-    if args and \
-       (not args[-1] or args[-1][0] == ':' or re.search(r'\s', args[-1])):
-      args[-1] = ":" + args[-1]
+  async def send(self, cmd: str, *args: str) -> None:
+    largs = list(args)
+    if largs and \
+       (not largs[-1] or largs[-1][0] == ':' or re.search(r'\s', largs[-1])):
+      largs[-1] = ":" + largs[-1]
     cmd = cmd.upper()
-    args.insert(0, cmd)
+    largs.insert(0, cmd)
 
-    logger.debug('send: %s', args)
-    d = ' '.join(args).encode('utf-8') + b'\r\n'
-    self.iostream.write(d, callback)
+    logger.debug('send: %s', largs)
+    d = ' '.join(largs).encode('utf-8') + b'\r\n'
+    self.writer.write(d)
+    await self.writer.drain()
 
-  def connect(self, reconnect=False):
+  async def connect(self, reconnect: bool=False) -> None:
     if reconnect:
-      try:
-        self.disconnect()
-      except tornado.iostream.StreamClosedError:
-        pass
+      await self.disconnect()
 
-    sock = socket.socket()
-    self._pending_msg = None
-    if ssl:
-      self.iostream = tornado.iostream.SSLIOStream(sock)
-    else:
-      self.iostream = tornado.iostream.IOStream(sock)
     logging.info('connecting to irc server %r...', self.server)
-    self.iostream.connect(
-      self.server,
-      partial(self._read_and_discard, self._nick),
-      server_hostname = self.server[0],
+    self.reader, self.writer = await asyncio.open_connection(
+      self.server, self.port, ssl = self.ssl,
     )
     self._kick_watchdog()
 
-  def disconnect(self):
-    logging.info('quit irc...')
-    self.send('QUIT')
-    self.iostream.close()
-
-  def _read_and_discard(self, callback):
-    self.iostream.read_until(b'\r\n', callback)
-
-  def _nick(self, nothing):
-    logging.debug('recved: %s', nothing)
+    await self.reader.readline()
     logging.info('set my nick')
-    self.send(
-      'NICK', self.nick,
-      callback = self._user,
-    )
-
-  def _user(self):
-    logging.info('the user command')
-    self.send('USER', self.nick, self.nick, self.host, self.realname)
-    self.iostream.read_until(b'/MOTD', self._join)
-
-  def _join(self, nothing):
+    await self.send('NICK', self.nick)
     self._kick_watchdog()
-    logging.debug('recved: %s', nothing)
+
+    logging.info('the user command')
+    await self.send('USER', self.nick, "0", "1", self.realname)
+    await self.reader.readuntil(b'/MOTD')
+    self._kick_watchdog()
+
     if self.password:
       logging.info('identifying...')
-      self.send('PRIVMSG', 'NickServ', 'identify %s %s' % (
+      await self.send('PRIVMSG', 'NickServ', 'identify %s %s' % (
         self.nick, self.password,
       ))
     logging.info('joining...')
-    self.send('JOIN', self.channel)
-    self._joined = True
-    if self._pending_msg:
-      logging.info('sending pending msg...')
-      self.sendmsg(self._pending_msg)
-    self.iostream.read_until(b'\r\n', self.message_received)
-
-  def pending(self, msg):
-    '''make a new message sent when connected and joined'''
-    self._pending_msg = msg
-
-  def message_received(self, msg):
+    await self.send('JOIN', self.channel)
+    self._connected.set()
     self._kick_watchdog()
-    msg = msg[:-2]
+
+    try:
+      while True:
+        msg = await self.reader.readline()
+        self._kick_watchdog()
+        await self.message_received(msg)
+    except asyncio.CancelledError:
+      await self.disconnect()
+
+  async def disconnect(self) -> None:
+    self._connected.clear()
+    logging.info('quit irc...')
+    await self.send('QUIT')
+    self.writer.close()
+
+  async def message_received(self, msgb: bytes) -> None:
+    self._kick_watchdog()
+    msgb = msgb[:-2]
     is_gbk = False
     try:
-      msg = msg.decode()
+      msg = msgb.decode()
     except UnicodeDecodeError:
       try:
-        msg = msg.decode('gb18030')
+        msg = msgb.decode('gb18030')
         is_gbk = True
       except UnicodeDecodeError:
-        msg = msg.decode(errors='replace')
+        msg = msgb.decode(errors='replace')
     logging.debug('irc received: %s', msg)
-    try:
-      self.iostream.read_until(b'\r\n', self.message_received)
-    except tornado.iostream.StreamClosedError:
-      logging.warn('IRC server closed the connection.')
-      self.connect(reconnect=True)
-      return
     if msg.startswith('PING :'):
-      self.pong(msg)
+      await self.pong(msg)
       return
     try:
       user, cmd, who, msg = msg.split(None, 3)
@@ -224,23 +241,6 @@ class IRC:
     except IndexError:
       return
     username = user[1:user.find('!')]
-    LQYMGT_left = self.LQYMGT_left
-    if username == 'MeowBot':
-      if ': ' in msg:
-        meowbot_replyee = msg.split(': ', 1)[0]
-        if LQYMGT_left.get(meowbot_replyee, 0) > 0:
-          if LQYMGT_left[meowbot_replyee] == 1:
-            del LQYMGT_left[meowbot_replyee]
-          else:
-            LQYMGT_left[meowbot_replyee] -= 1
-          logging.warn('ignoring MeowBot message: %r', msg)
-          return
-    elif username in ('[Olaf]', 'ovxw'):
-        logging.warn('ignoring [Olaf]/ovxw message: %r', msg)
-        return
-    m = self.LQYMGT_re.search(msg)
-    if m:
-      LQYMGT_left[username] = int(m.group(1), 16) + LQYMGT_left.get(username, 0)
     if is_gbk:
       msg = '(in GBK) ' + msg
     msg = COLORS.sub('', msg)
@@ -263,58 +263,33 @@ class IRC:
         username = m.group('nick')
         msg = m.group('msg')
 
-    if '.sm ' in msg:
-      logging.warn('ignoring: [%s] %s', username, msg)
-      return
+    await self.qout.put('[%s] %s' % (username, msg))
 
-    self._xmpp.sendmsg('[%s] %s' % (username, msg))
-
-  def pong(self, msg):
-    self._kick_watchdog()
-    self.send('PONG', self.nick)
+  async def pong(self, msg: str) -> None:
+    await self.send('PONG', self.nick)
     logging.info('PONG sent')
 
-  def sendmsg(self, msg):
-    if not self._joined:
-      return
+  async def sendmsg(self, msg: str) -> None:
     logging.info('sending to irc: %s', msg)
-    self._kick_watchdog()
     # 'PRIVMSG' ' ' channel ' ' ':' msg '\r\n'
     # 300 is assumed max length
-    size = 300 - (12 + len(self.channel))
+    size = 512 - (12 + len(self.channel))
     for line in msg.split('\n'):
       for m in splitmsg(line, size):
-        self.send('PRIVMSG', self.channel, m)
+        await self.send('PRIVMSG', self.channel, m)
+    self._kick_watchdog()
 
-def main():
-  settings = XMPPSettings({
-    "software_name": "IrcBot",
-    'starttls': True,
-    'password': password,
-    'tls_verify_peer': False,
-    'software_os': 'Linux',
-  })
+async def main(configfile: str) -> None:
+  with open(configfile) as f:
+    config = toml.load(f)
 
-  try:
-    settings['server'] = xmpp_server
-  except NameError:
-    pass
-
-  if False:
-    print("enabling trace")
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    for logger in ("pyxmpp2.IN", "pyxmpp2.OUT"):
-      logger = logging.getLogger(logger)
-      logger.setLevel(logging.DEBUG)
-      logger.addHandler(handler)
-      logger.propagate = False
-
-  bot = IrcBot(BotJID, settings, irc_config)
-  try:
-    bot.start()
-  except KeyboardInterrupt:
-    bot.disconnect()
+  irc2xmpp: Queue[str] = Queue()
+  xmpp2irc: Queue[str] = Queue()
+  xmppbot = XmppBot(config['xmpp'], irc2xmpp, xmpp2irc)
+  ircbot = IrcBot(config['irc'], xmpp2irc, irc2xmpp)
+  a = asyncio.create_task(xmppbot.run())
+  b = asyncio.create_task(ircbot.run())
+  await asyncio.gather(a, b)
 
 if __name__ == '__main__':
   import argparse
@@ -325,7 +300,9 @@ if __name__ == '__main__':
   parser.add_argument('-l', '--logging',
                       choices=('debug', 'info', 'warning', 'error'), default='info',
                       help='logging level (default: info)')
+  parser.add_argument('configfile',
+                      help='the config file to use')
   args = parser.parse_args()
   nicelogger.enable_pretty_logging(getattr(logging, args.logging.upper()))
 
-  main()
+  asyncio.run(main(args.configfile))
