@@ -245,7 +245,7 @@ class IrcBot:
       msg = '(in GBK) ' + msg
     msg = COLORS.sub('', msg)
     msg = CONTROLCHARS.sub('', msg)
-    logging.info('IRC msg: %r', msg)
+    logging.info('IRC msg: %s: %r', username, msg)
     if username in TG_BOTS:
       m = TG_MSG.match(msg)
       if m:
