@@ -128,7 +128,7 @@ class IrcBot:
     self.qout = qout
 
   async def run(self) -> None:
-    conn = self.connect()
+    conn = self.conn = asyncio.create_task(self.connect())
     msgin = self.process_qin()
     await asyncio.gather(conn, msgin)
 
@@ -145,7 +145,7 @@ class IrcBot:
 
     self._watchdog_to = loop.call_later(
       self._time_out,
-      lambda: asyncio.create_task(self.connect(reconnect=True)),
+      self.conn.cancel,
     )
 
   async def send(self, cmd: str, *args: str) -> None:
@@ -161,10 +161,18 @@ class IrcBot:
     self.writer.write(d)
     await self.writer.drain()
 
-  async def connect(self, reconnect: bool=False) -> None:
-    if reconnect:
-      await self.disconnect()
+  async def connect(self) -> None:
+    while True:
+      try:
+        await self._connect()
+      except (asyncio.CancelledError, ConnectionResetError) as e:
+        logging.warning('IRC connection broken: %r', e)
+        try:
+          await self.disconnect()
+        except OSError as e:
+          logging.warning('disconnection failed: %r', e)
 
+  async def _connect(self) -> None:
     logging.info('connecting to irc server %r...', self.server)
     self.reader, self.writer = await asyncio.open_connection(
       self.server, self.port, ssl = self.ssl,
@@ -191,13 +199,10 @@ class IrcBot:
     self._connected.set()
     self._kick_watchdog()
 
-    try:
-      while True:
-        msg = await self.reader.readline()
-        self._kick_watchdog()
-        await self.message_received(msg)
-    except asyncio.CancelledError:
-      await self.disconnect()
+    while True:
+      msg = await self.reader.readline()
+      self._kick_watchdog()
+      await self.message_received(msg)
 
   async def disconnect(self) -> None:
     self._connected.clear()
