@@ -73,20 +73,27 @@ class XmppBot:
     await asyncio.gather(conn, msgin)
 
   async def connect(self) -> None:
-    async with self.client.connected():
-      self._connected.set()
-      message_dispatcher = self.client.summon(
-        aioxmpp.dispatcher.SimpleMessageDispatcher
-      )
+    message_dispatcher = self.client.summon(
+      aioxmpp.dispatcher.SimpleMessageDispatcher
+    )
 
-      # register a message callback here
-      message_dispatcher.register_callback(
-        aioxmpp.MessageType.CHAT,
-        None,
-        self.message_received,
-      )
-      stop_event = self.make_sigint_event()
-      await stop_event.wait()
+    # register a message callback here
+    message_dispatcher.register_callback(
+      aioxmpp.MessageType.CHAT,
+      None,
+      self.message_received,
+    )
+
+    while True:
+      try:
+        async with self.client.connected():
+          self._connected.set()
+          stop_event = self.make_sigint_event()
+          await stop_event.wait()
+          break
+      except Exception:
+        logger.exception('XMPP client error')
+      self._connected.clear()
 
   def make_sigint_event(self) -> asyncio.Event:
     event = asyncio.Event()
@@ -171,11 +178,13 @@ class IrcBot:
       try:
         await self._connect()
       except (asyncio.CancelledError, ConnectionResetError, ConnectionAbortedError) as e:
-        logging.warning('IRC connection broken: %r', e)
+        # FIXME: we need another indicator on timeouts so we can quit
+        logging.warning('IRC connection broken, reconnecting after 1s: %r', e)
         try:
           await self.disconnect()
-        except OSError as e:
+        except (OSError, asyncio.CancelledError) as e:
           logging.warning('disconnection failed: %r', e)
+        await asyncio.sleep(1)
 
   async def _connect(self) -> None:
     logging.info('connecting to irc server %r...', self.server)
