@@ -215,6 +215,8 @@ class IrcBot:
 
     while True:
       msg = await self.reader.readline()
+      if not msg:
+        return
       self._kick_watchdog()
       await self.message_received(msg)
 
