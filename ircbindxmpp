@@ -177,7 +177,7 @@ class IrcBot:
     while True:
       try:
         await self._connect()
-      except (asyncio.CancelledError, ConnectionResetError, ConnectionAbortedError) as e:
+      except (asyncio.CancelledError, ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError) as e:
         # FIXME: we need another indicator on timeouts so we can quit
         logging.warning('IRC connection broken, reconnecting after 1s: %r', e)
         try:
